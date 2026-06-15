@@ -17,41 +17,23 @@ pipeline {
         }
 
         stage('Install Dependencies') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                }
-            }
             steps {
                 echo "Installing dependencies..."
-                sh 'npm ci'
+                sh 'docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine npm ci'
             }
         }
 
         stage('Lint') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                }
-            }
             steps {
                 echo "Running linter..."
-                sh 'npm run lint || true'
+                sh 'docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine npm run lint || true'
             }
         }
 
         stage('Build') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                }
-            }
             steps {
                 echo "Building React app..."
-                sh 'NODE_OPTIONS=--openssl-legacy-provider npm run build'
+                sh 'docker run --rm -v "$WORKSPACE":/app -w /app -e NODE_OPTIONS=--openssl-legacy-provider node:18-alpine npm run build'
             }
         }
 
