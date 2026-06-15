@@ -1,0 +1,104 @@
+pipeline {
+    agent any
+
+    environment {
+        // Docker Hub credentials (configure in Jenkins → Manage Credentials)
+        DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
+        DOCKER_IMAGE = "zomato-clone"
+        DOCKER_TAG = "${BUILD_NUMBER}"
+    }
+
+    tools {
+        nodejs 'NodeJS-18' // Configure this in Jenkins → Global Tool Configuration
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo "Checking out source code..."
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo "Installing dependencies..."
+                sh 'npm ci'
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                echo "Running linter..."
+                sh 'npm run lint || true' // non-blocking — change to fail on lint errors if needed
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo "Running tests..."
+                sh 'CI=true npm test -- --watchAll=false'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "Building React app..."
+                sh 'npm run build'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo "Building Docker image..."
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                echo "Pushing Docker image to Docker Hub..."
+                sh "echo ${DOCKER_CREDENTIALS_PSW} | docker login -u ${DOCKER_CREDENTIALS_USR} --password-stdin"
+                sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                sh "docker push ${DOCKER_IMAGE}:latest"
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo "Deploying container..."
+                sh '''
+                    // Stop and remove existing container if running
+                    docker stop zomato-clone-app || true
+                    docker rm zomato-clone-app || true
+
+                    // Run the new container
+                    docker run -d \
+                        --name zomato-clone-app \
+                        -p 3000:3000 \
+                        --restart unless-stopped \
+                        ${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up Docker credentials..."
+            sh 'docker logout || true'
+        }
+        success {
+            echo "✅ Pipeline completed successfully! App running on port 3000."
+        }
+        failure {
+            echo "❌ Pipeline failed! Check the logs above for details."
+        }
+        cleanup {
+            // Remove dangling images to save disk space
+            sh 'docker image prune -f || true'
+        }
+    }
+}
